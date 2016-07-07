@@ -1,7 +1,6 @@
 [submodule "distro"]
 	path = distro
-	url = https://github.com/borisfom/distro
-        branch = R4
+	url = https://github.com/torch/distro
 [submodule "external/libpng"]
 	path = external/libpng
 	url = https://github.com/borisfom/platform_external_libpng
