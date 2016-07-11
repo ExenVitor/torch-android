@@ -117,10 +117,6 @@ if [[ "$WITH_CUDA" == "ON" ]]; then
         && make install) && echo "FindCuda bits of CMake 3.6 installed" || exit 1
 fi
 
-cd distro/extra/FindCUDA && \
-    (cmake -E make_directory build && cd build && do_cmake_config .. && make install) \
-    && echo "FindCuda installed" || exit 1
-
 cd $SCRIPT_ROOT_DIR
 
 cd external/libpng && \
