@@ -7,23 +7,25 @@
 void android_fopen_set_asset_manager(AAssetManager* manager);
 FILE* android_fopen(const char* fname, const char* mode);
 
-static const luaL_reg lualibs[] =
-  {
-    { "base",       luaopen_base },
-    { NULL,         NULL }
-  };
+// static const luaL_reg lualibs[] =
+//   {
+//     { "base",       luaopen_base },
+//     { NULL,         NULL }
+//   };
 
 // function to open up all the Lua libraries you declared above
 static lua_State* openlualibs(lua_State *l)
 {
+  //just open all lua standard libs
   luaL_openlibs(l);
-  const luaL_reg *lib;
-  int ret;
-  for (lib = lualibs; lib->func != NULL; lib++)
-    {
-      lib->func(l);
-      lua_settop(l, 0);
-    }
+  //no need to call luaopen_base, so remove code below
+  // const luaL_reg *lib;
+  // int ret;
+  // for (lib = lualibs; lib->func != NULL; lib++)
+  //   {
+  //     lib->func(l);
+  //     lua_settop(l, 0);
+  //   }
   return l;
 }
 
@@ -76,37 +78,59 @@ char* android_asset_get_bytes(const char *name) {
   return buf;
 }
 
-extern int loader_android (lua_State *L) {
-  const char* name = lua_tostring(L, -1);
+int try_load_lua_file(lua_State *L,const char* base_path, const char* suffix, const char* module_name){
   char pname[4096];
+  long size;
+  char *filebytes;
 
+  strlcpy(pname, base_path, sizeof(pname));
+  strlcat(pname, module_name, sizeof(pname));
+  strlcat(pname, suffix, sizeof(pname));
+  size = android_asset_get_size(pname);
+  if(size != -1){
+    filebytes = android_asset_get_bytes(pname);
+    luaL_loadbuffer(L, filebytes, size, module_name);
+    return 1;
+  }
+  return 0;
+}
+
+int try_load_module(lua_State *L, const char* base_path, const char* module_name){
+  const char* file_suffix = ".lua";
+  const char* init_suffix = "/init.lua";
+
+  if(try_load_lua_file(L, base_path, file_suffix, module_name)){
+    return 1;
+  }
+
+  if(try_load_lua_file(L, base_path, init_suffix, module_name)){
+    return 1;
+  }
+
+  return 0;
+}
+
+extern int loader_android (lua_State *L) {
+
+  const char* sys_base_path = "lua/5.1/";
+  //our project dir
+  const char* project_ref_path = "proj_ref/";
+
+  const char* name = lua_tostring(L, -1);
+ 
   name = luaL_gsub(L, name, ".", LUA_DIRSEP);
 
-  char *filebytes;
-  long size;
-  // try lua/5.1/torch.lua
-  strlcpy(pname, "lua/5.1/", sizeof(pname));
-  strlcat(pname, name, sizeof(pname));
-  strlcat(pname, ".lua", sizeof(pname));
-  size = android_asset_get_size(pname);
-  if (size != -1) {
-    filebytes = android_asset_get_bytes(pname);
-    luaL_loadbuffer(L, filebytes, size, name);
+  //try lua/5.1/{name}.lua or lua/5.1/{name}/init.lua
+  if(try_load_module(L, sys_base_path, name)){
     return 1;
   }
-  // try lua/5.1/torch/init.lua
-  pname[0] = '\0';
-  strlcpy(pname, "lua/5.1/", sizeof(pname));
-  strlcat(pname, name, sizeof(pname));
-  strlcat(pname, "/init.lua", sizeof(pname));
-  size = android_asset_get_size(pname);
-  if (size != -1) {
-    filebytes = android_asset_get_bytes(pname);
-    luaL_loadbuffer(L, filebytes, size, name);
+
+  //try proj_ref/{name}.lua or proj_ref/{name}/init.lua
+  if(try_load_module(L, project_ref_path, name)){
     return 1;
   }
-  sprintf(pname,"loader_android: name=%s failed", name);
-  D(pname);
+  
+  D("loader_android: name=%s failed", name);
   return 1;
 }
 

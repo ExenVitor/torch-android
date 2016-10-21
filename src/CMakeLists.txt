@@ -12,7 +12,7 @@ LINK_DIRECTORIES(${ANDROID_NDK_SYSROOT_LIBDIR})
 SET(src init.c torchandroid.cpp torchcall.cpp android_fopen.c)
 SET(luasrc init.lua)
 
-ADD_LIBRARY(torchandroid MODULE ${src})
+ADD_LIBRARY(torchandroid SHARED ${src})
 
 SET_TARGET_PROPERTIES(torchandroid PROPERTIES
       PREFIX "lib"

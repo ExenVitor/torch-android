@@ -5,18 +5,21 @@
 NDKABI=21
 
 # Default architecture is V7+Neon
-ARCH=${ARCH:-"v7n"}
+ARCH=${ARCH:-"v8"}
 
 # Default is to build with CUDA.
 # Make sure you installed https://developer.nvidia.com/codeworks-android.
 # Otherwise, set WITH_CUDA to OFF.
-WITH_CUDA=${WITH_CUDA:-"ON"}
+WITH_CUDA=${WITH_CUDA:-"OFF"}
 
 if [[ "$ARCH" == "v8" ]]; then
     APP_ABI=arm64-v8a
     M_ARCH=-march=armv8-a
     ABI_NAME=aarch64-linux-androideabi
     COMPUTE_NAME="Maxwell+Tegra"
+    OPEN_BLAS_TARGET=ARMV8
+    OPEN_BLAS_BINARY=64
+    STANDALONE_TOOLCHAIN=/home/chensi/ndk-r10e-arm64-21-toolchain
 elif [[ "$ARCH" == "v7n" ]]; then
     APP_ABI="armeabi-v7a with NEON"
     M_ARCH="-march=armv7-a"
@@ -24,6 +27,9 @@ elif [[ "$ARCH" == "v7n" ]]; then
     COMPUTE_NAME="Kepler+Tegra Maxwell+Tegra"
     LOCAL_ARM_NEON=true
     ARCH_ARM_HAVE_NEON=true
+    OPEN_BLAS_TARGET=ARMV7
+    OPEN_BLAS_BINARY=32
+    STANDALONE_TOOLCHAIN=/home/chensi/ndk-r10e-armv7-21-toolchain
 else
     echo "Unsupported Architecture: $ARCH"
     exit 1
@@ -78,11 +84,12 @@ HOST_CC="gcc"
 else
 export HOST=arm-linux-androideabi
 NDK_SYSROOT=$NDK/platforms/android-$NDKABI/arch-arm
-ANDROID_CFLAGS="-mfloat-abi=softfp  -fprefetch-loop-arrays"
+ANDROID_CFLAGS="-mfloat-abi=softfp -fprefetch-loop-arrays -D_NDK_MATH_NO_SOFTFP=1"
 HOST_CC="gcc -m32"
+LINKER_FLAGS="-Wl,--fix-cortex-a8,--no-warn-mismatch"
 fi
 
-ANDROID_CFLAGS="${M_ARCH} --sysroot ${NDK_SYSROOT} ${ANDROID_CFLAGS} -Wl,--fix-cortex-a8"
+ANDROID_CFLAGS="${M_ARCH} --sysroot ${NDK_SYSROOT} ${ANDROID_CFLAGS} ${LINKER_FLAGS}"
 
 if [[ "$unamestr" == 'Linux' ]]; then
     BUILD_PLATFORM=linux-x86_64
@@ -95,9 +102,9 @@ export TOOLCHAIN="$NDK/toolchains/${HOST}-${TOOLCHAIN_VERSION}/prebuilt/${BUILD_
 export CUDA_SELECT_NVCC_ARCH_TARGETS="${COMPUTE_NAME}"
 
 do_cmake_config() {
-cmake $1 -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_ROOT_DIR/cmake/android.toolchain.cmake" \
+cmake $1 $2 $3 -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_ROOT_DIR/cmake/android.toolchain.cmake" \
     -DANDROID_NDK="${ANDROID_NDK}" -DANDROID_ABI="${APP_ABI}" \
-    -DWITH_CUDA=${WITH_CUDA} -DWITH_LUAROCKS=OFF -DWITH_LUAJIT21=ON\
+    -DWITH_CUDA=${WITH_CUDA} -DWITH_LUAROCKS=OFF -DWITH_LUAJIT21=ON \
     -DCUDA_USE_STATIC_CUDA_RUNTIME=OFF -DANDROID_STL_FORCE_FEATURES=OFF\
     -DANDROID_NATIVE_API_LEVEL="${NDKABI}" -DANDROID_STL=gnustl_shared\
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" -DCMAKE_INSTALL_SUBDIR="${CMAKE_INSTALL_SUBDIR}" \
@@ -106,6 +113,13 @@ cmake $1 -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_ROOT_DIR/cm
     -DLUAJIT_SYSTEM_BUILDVM="$SCRIPT_ROOT_DIR/distro/exe/luajit-rocks/luajit-2.1/src/host/buildvm" \
     -DCMAKE_C_FLAGS="-DDISABLE_POSIX_MEMALIGN"
 echo " -------------- Configuring DONE ---------------"
+}
+
+function pause(){
+        read -n 1 -p "$*" INP
+        if [ $INP != '' ] ; then
+                echo -ne '\b \n'
+        fi
 }
 
 cd $SCRIPT_ROOT_DIR
@@ -119,10 +133,10 @@ fi
 
 cd $SCRIPT_ROOT_DIR
 
-cd external/libpng && \
-    (cmake -E make_directory build && cd build && do_cmake_config .. && make install) \
-    && echo "libpng installed" || exit 1
-cd $SCRIPT_ROOT_DIR
+# cd external/libpng && \
+#     (cmake -E make_directory build && cd build && do_cmake_config .. && make install) \
+#     && echo "libpng installed" || exit 1
+# cd $SCRIPT_ROOT_DIR
 
 #cd external/libjpeg-turbo && \
 #    (cmake -E make_directory build && cd build && . ../../build-libjpeg.sh) \
@@ -138,13 +152,27 @@ $MAKE $MAKEARGS HOST_CC="$HOST_CC" CC="gcc" HOST_SYS=$unamestr TARGET_SYS=Linux 
 echo "Done installing Lua"
 
 cd $SCRIPT_ROOT_DIR
-(cmake -E make_directory build && cd build && do_cmake_config ..) || exit 1
+
+pause '*********Prepare to compile OpenBLAS************'
+
+cd external/OpenBLAS
+
+(export PATH=${STANDALONE_TOOLCHAIN}/bin:$PATH \
+ && $MAKE $MAKEARGS TARGET=${OPEN_BLAS_TARGET} BINARY=${OPEN_BLAS_BINARY} HOSTCC="$HOST_CC" CC="${HOST}-gcc" NOFORTRAN=1\
+ && $MAKE $MAKEARGS TARGET=${OPEN_BLAS_TARGET} BINARY=${OPEN_BLAS_BINARY} HOSTCC="$HOST_CC" CC="${HOST}-gcc" NOFORTRAN=1 PREFIX=${INSTALL_DIR} install)
+
+pause '*********Prepare to gen build dir************'
+
+cd $SCRIPT_ROOT_DIR
+(cmake -E make_directory build && cd build && do_cmake_config -C ../TryRunResults.cmake ..) || exit 1
+
+pause '*********Gen build dir done************'
 
 cd build
 
 (cd distro/exe && $MAKE $MAKEARGS install) || exit 1
 # cwrap needs to be there first
-(cd distro/pkg/cwrap && $MAKE $MAKEARGS install) || exit 1
+# (cd distro/pkg/cwrap && $MAKE $MAKEARGS install) || exit 1
 (cd distro/pkg && $MAKE $MAKEARGS install) || exit 1
 
 # Cutorch installs some headers/libs used by other modules in extra
