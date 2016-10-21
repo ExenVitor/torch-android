@@ -1,10 +1,10 @@
-[submodule "distro"]
-	path = distro
-	url = https://github.com/borisfom/distro
-        branch = upstream
 [submodule "external/libpng"]
 	path = external/libpng
 	url = https://github.com/borisfom/platform_external_libpng
 [submodule "external/libjpeg-turbo"]
 	path = external/libjpeg-turbo
 	url = https://github.com/libjpeg-turbo/libjpeg-turbo
+[submodule "distro"]
+	path = distro
+	url = https://github.com/ExenVitor/distro.git
+	branch = lite_for_android
