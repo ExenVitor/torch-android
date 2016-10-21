@@ -8,3 +8,6 @@
 	path = distro
 	url = https://github.com/ExenVitor/distro.git
 	branch = lite_for_android
+[submodule "external/OpenBLAS"]
+	path = external/OpenBLAS
+	url = https://github.com/xianyi/OpenBLAS.git
